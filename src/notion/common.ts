@@ -1,4 +1,4 @@
-import type {RichText} from './blocks';
+import type { RichText } from './blocks';
 
 /**
  * The limits that the Notion API uses for property values.
@@ -57,9 +57,9 @@ export function richText(
         content: content,
         link: options.url
           ? {
-              type: 'url',
-              url: options.url,
-            }
+            type: 'url',
+            url: options.url,
+          }
           : undefined,
       },
     } as RichText;

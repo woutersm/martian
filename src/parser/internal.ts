@@ -1,8 +1,8 @@
 import * as md from '../markdown';
 import * as notion from '../notion';
 import path from 'path';
-import {URL} from 'url';
-import {isSupportedCodeLang, LIMITS} from '../notion';
+import { URL } from 'url';
+import { isSupportedCodeLang, LIMITS } from '../notion';
 
 function ensureLength(text: string, copy?: object) {
   const chunks = text.match(/[^]{1,2000}/g) || [];
@@ -20,41 +20,69 @@ function ensureCodeBlockLanguage(lang?: string) {
 
 function parseInline(
   element: md.PhrasingContent,
-  options?: notion.RichTextOptions
+  options?: {
+    richTextOptions?: notion.RichTextOptions;
+    blockOptions?: BlocksOptions;
+  }
 ): notion.RichText[] {
-  const copy = {
+  let url = options?.richTextOptions?.url;
+
+  try {
+    if (url) {
+      let baseUrl = options?.blockOptions?.baseUrl;
+      const parsedUrl = new URL(url, baseUrl);
+
+      url = parsedUrl.toString();
+    }
+  } catch (e) {
+    url = undefined;
+  }
+
+  const richTextOptions = {
     annotations: {
-      ...(options?.annotations ?? {}),
+      ...(options?.richTextOptions?.annotations ?? {}),
     },
-    url: options?.url,
+    url,
   };
+
+  const blockOptions = options?.blockOptions;
 
   switch (element.type) {
     case 'text':
-      return ensureLength(element.value, copy);
+      return ensureLength(element.value, richTextOptions);
 
     case 'delete':
-      copy.annotations.strikethrough = true;
-      return element.children.flatMap(child => parseInline(child, copy));
+      richTextOptions.annotations.strikethrough = true;
+      return element.children.flatMap(child =>
+        parseInline(child, { richTextOptions, blockOptions })
+      );
 
     case 'emphasis':
-      copy.annotations.italic = true;
-      return element.children.flatMap(child => parseInline(child, copy));
+      richTextOptions.annotations.italic = true;
+      return element.children.flatMap(child =>
+        parseInline(child, { richTextOptions, blockOptions })
+      );
 
     case 'strong':
-      copy.annotations.bold = true;
-      return element.children.flatMap(child => parseInline(child, copy));
+      richTextOptions.annotations.bold = true;
+      return element.children.flatMap(child =>
+        parseInline(child, { richTextOptions, blockOptions })
+      );
 
     case 'link':
-      copy.url = element.url;
-      return element.children.flatMap(child => parseInline(child, copy));
+      richTextOptions.url = element.url;
+      return element.children.flatMap(child =>
+        parseInline(child, { richTextOptions, blockOptions })
+      );
 
     case 'inlineCode':
-      copy.annotations.code = true;
-      return [notion.richText(element.value, copy)];
+      richTextOptions.annotations.code = true;
+      return [notion.richText(element.value, richTextOptions)];
 
     case 'inlineMath':
-      return [notion.richText(element.value, {...copy, type: 'equation'})];
+      return [
+        notion.richText(element.value, { ...richTextOptions, type: 'equation' }),
+      ];
 
     default:
       return [];
@@ -122,7 +150,9 @@ function parseParagraph(
     if (item.type === 'image') {
       images.push(parseImage(item, options));
     } else {
-      const richText = parseInline(item) as notion.RichText[];
+      const richText = parseInline(item, {
+        blockOptions: options,
+      }) as notion.RichText[];
       if (richText.length) {
         paragraphs.push(richText);
       }
@@ -267,6 +297,7 @@ export interface CommonOptions {
 export interface BlocksOptions extends CommonOptions {
   /** Whether to render invalid images as text */
   strictImageUrls?: boolean;
+  baseUrl?: string;
 }
 
 export function parseBlocks(
@@ -276,7 +307,7 @@ export function parseBlocks(
   const parsed = root.children.flatMap(item => parseNode(item, options || {}));
 
   const truncate = !!(options?.notionLimits?.truncate ?? true),
-    limitCallback = options?.notionLimits?.onError ?? (() => {});
+    limitCallback = options?.notionLimits?.onError ?? (() => { });
 
   if (parsed.length > LIMITS.PAYLOAD_BLOCKS)
     limitCallback(
@@ -311,7 +342,7 @@ export function parseRichText(
   });
 
   const truncate = !!(options?.notionLimits?.truncate ?? true),
-    limitCallback = options?.notionLimits?.onError ?? (() => {});
+    limitCallback = options?.notionLimits?.onError ?? (() => { });
 
   if (richTexts.length > LIMITS.RICH_TEXT_ARRAYS)
     limitCallback(
